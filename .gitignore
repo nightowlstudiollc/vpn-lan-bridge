@@ -40,3 +40,6 @@ env/
 # Lock files
 *.lock
 .claude/
+
+# Implementation plans (internal)
+docs/plans/
