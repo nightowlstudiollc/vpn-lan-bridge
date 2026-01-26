@@ -226,7 +226,7 @@ run_daemon() {
 }
 
 install_cron() {
-  local cron_entry="* * * * * ${SCRIPT_DIR}/watchdog.sh >> ${LOG_FILE} 2>&1"
+  local cron_entry="*/5 * * * * ${SCRIPT_DIR}/watchdog.sh >> ${LOG_FILE} 2>&1"
 
   if crontab -l 2>/dev/null | grep -q "lan-bridge"; then
     echo "Cron job already exists"
@@ -236,7 +236,7 @@ install_cron() {
       crontab -l 2>/dev/null
       echo "${cron_entry}"
     ) | crontab -
-    echo "Installed cron job:"
+    echo "Installed cron job (runs every 5 minutes):"
     echo "  ${cron_entry}"
   fi
 }
