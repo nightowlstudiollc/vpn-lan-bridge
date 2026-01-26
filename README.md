@@ -2,11 +2,18 @@
 
 **Maintain local network connectivity when your VPN captures LAN traffic**
 
+## Prerequisites
+
+- **Python 3.7 or higher** (standard library only, no additional packages)
+- **Bash 3.2+** (for scripts)
+- Basic understanding of networking (IP addresses, ports)
+
 ## The Problem
 
 Many enterprise VPNs route private IP ranges (like `10.0.0.0/8` or `192.168.0.0/16`) through their tunnel for security purposes. When your home/office LAN uses IP addresses within these ranges, local network services become unreachable while connected to the VPN.
 
 **Common symptoms:**
+
 - KVM software (Synergy, Barrier, ShareMouse) stops working
 - Network printers become inaccessible
 - NAS/file shares disconnect
@@ -14,6 +21,7 @@ Many enterprise VPNs route private IP ranges (like `10.0.0.0/8` or `192.168.0.0/
 - AirDrop/Bonjour services fail
 
 **Example scenario:**
+
 ```
 Home LAN:        10.0.15.0/24
 VPN routes:      10.0.0.0/8 → tunnel
@@ -48,7 +56,18 @@ This toolkit provides a **TCP proxy** that binds to your physical network interf
 
 ## Quick Start
 
-### 1. Identify Your Network Configuration
+### 1. Verify Python Version
+
+```bash
+python3 --version  # Must be 3.7 or higher
+```
+
+If you need to upgrade Python:
+
+- **macOS**: `brew install python3`
+- **Linux**: Use your package manager (apt, yum, etc.)
+
+### 2. Identify Your Network Configuration
 
 ```bash
 # Find your local LAN IP
@@ -64,7 +83,7 @@ route -n get 192.168.1.50
 # If "interface: utun" appears, the VPN is capturing it
 ```
 
-### 2. Configure the Proxy
+### 3. Configure the Proxy
 
 Copy the example configuration:
 
@@ -72,21 +91,28 @@ Copy the example configuration:
 cp examples/config.example.sh config.sh
 ```
 
-Edit `config.sh` with your values:
+Edit `config.sh` with your values (key=value format, no spaces around `=`):
 
 ```bash
 # Your computer's LAN IP (the physical interface, not VPN)
-LOCAL_LAN_IP="192.168.1.100"
+LOCAL_LAN_IP=192.168.1.100
 
 # The service you want to reach
-REMOTE_HOST="192.168.1.50"
-REMOTE_PORT="24800"
+REMOTE_HOST=192.168.1.50
+REMOTE_PORT=24800
 
 # Local proxy port (application connects here)
-PROXY_PORT="24800"
+PROXY_PORT=24800
 ```
 
-### 3. Start the Proxy
+**Important**: The config file uses a strict key=value format:
+
+- No spaces around the `=` sign
+- Lines starting with `#` are comments and ignored
+- Empty lines are ignored
+- Invalid lines will generate warnings but won't stop execution
+
+### 4. Start the Proxy
 
 ```bash
 ./scripts/lan-bridge.py
@@ -105,6 +131,7 @@ See [docs/synergy-setup.md](docs/synergy-setup.md)
 ### For Other TCP Services
 
 The proxy works with any TCP-based service:
+
 - File shares (SMB on port 445)
 - Printers (IPP on port 631)
 - Development servers
@@ -186,6 +213,7 @@ Monitor your service and restart the proxy if needed:
 ### The Routing Problem
 
 When you connect to a VPN, it typically:
+
 1. Creates a virtual network interface (e.g., `utun0`)
 2. Adds routes that direct traffic through this interface
 3. For "full tunnel" VPNs, this includes all private IP ranges
@@ -236,16 +264,19 @@ ping 192.168.1.50  # Fails - goes through VPN
 ### Proxy Not Connecting
 
 1. Check the proxy is running:
+
    ```bash
    pgrep -fl lan-bridge
    ```
 
 2. Check the proxy log:
+
    ```bash
    tail -f ~/log/lan-bridge.log
    ```
 
 3. Verify your LAN IP is correct:
+
    ```bash
    ifconfig en0 | grep "inet "
    ```
@@ -259,6 +290,7 @@ ping 192.168.1.50  # Fails - goes through VPN
 ### VPN Reconnect Breaks Everything
 
 The TCP keepalive settings help, but you may need to:
+
 1. Restart the proxy after VPN reconnects
 2. Use the watchdog script for automatic recovery
 
@@ -266,10 +298,10 @@ The TCP keepalive settings help, but you may need to:
 
 | VPN Client | OS | Status |
 |------------|-----|--------|
-| GlobalProtect | macOS | Working |
-| GlobalProtect | Windows | Untested |
-| Cisco AnyConnect | macOS | Should work |
-| OpenVPN | Linux | Should work |
+| GlobalProtect | macOS | Working (requires Python 3.7+) |
+| GlobalProtect | Windows | Untested (requires Python 3.7+) |
+| Cisco AnyConnect | macOS | Should work (requires Python 3.7+) |
+| OpenVPN | Linux | Should work (requires Python 3.7+) |
 
 ## Tested Applications
 
@@ -279,6 +311,14 @@ The TCP keepalive settings help, but you may need to:
 | Barrier | 24800 | Should work |
 | SMB/CIFS | 445 | Untested |
 | Postgres | 5432 | Should work |
+
+## Limitations
+
+1. Only TCP services (no UDP)
+2. Requires continuous VPN connection
+3. For "full tunnel" VPNs, this includes all private IP ranges
+4. TCP keepalive helps, but long-idle connections may still drop
+5. Requires Python 3.7 or higher (check with `python3 --version`)
 
 ## Contributing
 
