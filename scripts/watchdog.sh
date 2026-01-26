@@ -74,8 +74,8 @@ acquire_lock() {
   local result=$?
 
   if [[ ${result} -eq 0 ]]; then
-    # We got the lock, set up cleanup
-    trap 'rm -f "$lockfile"' EXIT INT TERM HUP
+    # We got the lock, set up cleanup using global LOCK_FILE variable
+    trap 'rm -f "${LOCK_FILE}"' EXIT INT TERM HUP
     return 0
   fi
 
