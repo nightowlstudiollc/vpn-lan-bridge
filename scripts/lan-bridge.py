@@ -21,6 +21,7 @@ Environment variables (alternative to config file):
 """
 
 import argparse
+import ipaddress
 import logging
 import os
 import signal
@@ -284,6 +285,53 @@ def find_config_file() -> str:
     return None
 
 
+def validate_ip(ip_str: str, param_name: str) -> str:
+    """
+    Validate IP address format and return canonical form.
+    Exits with error message if invalid.
+    """
+    try:
+        # Validate IPv4 format
+        ip = ipaddress.IPv4Address(ip_str)
+        ip_str_canonical = str(ip)
+
+        # Warn if it looks like a VPN IP (common VPN ranges)
+        first_octet = int(ip_str.split(".")[0])
+        if first_octet == 10 or (
+            first_octet == 172 and 16 <= int(ip_str.split(".")[1]) <= 31
+        ):
+            logger.warning(
+                f"{param_name} {ip_str} is in a private range often used by VPNs"
+            )
+            logger.warning(
+                "Ensure this is your physical LAN IP, not your VPN tunnel IP"
+            )
+
+        return ip_str_canonical
+    except (ipaddress.AddressValueError, ValueError) as e:
+        logger.error(f"Invalid IP address for {param_name}: {ip_str}")
+        logger.error("Expected format: 192.168.1.100")
+        logger.error(f"Error: {e}")
+        sys.exit(1)
+
+
+def validate_port(port: int, param_name: str) -> int:
+    """
+    Validate port is in valid range (1-65535).
+    Exits with error message if invalid.
+    """
+    try:
+        port = int(port)
+        if not (1 <= port <= 65535):
+            raise ValueError(f"Port must be between 1 and 65535, got {port}")
+        return port
+    except (ValueError, TypeError) as e:
+        logger.error(f"Invalid port for {param_name}: {port}")
+        logger.error("Port must be an integer between 1 and 65535")
+        logger.error(f"Error: {e}")
+        sys.exit(1)
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -372,12 +420,20 @@ def main():
             logger.error("No config file found. Create config.sh or use --config")
         sys.exit(1)
 
+    # Validate IP addresses
+    local_lan_ip = validate_ip(local_lan_ip, "LOCAL_LAN_IP")
+    remote_host = validate_ip(remote_host, "REMOTE_HOST")
+
+    # Validate ports
     try:
         remote_port = int(remote_port_str)
         proxy_port = int(proxy_port_str) if proxy_port_str else remote_port
     except ValueError as e:
         logger.error(f"Invalid port number: {e}")
         sys.exit(1)
+
+    remote_port = validate_port(remote_port, "REMOTE_PORT")
+    proxy_port = validate_port(proxy_port, "PROXY_PORT")
 
     # Create and start bridge
     bridge = LANBridge(
