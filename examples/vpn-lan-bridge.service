@@ -1,0 +1,37 @@
+# VPN LAN Bridge - systemd service for Linux
+#
+# Installation:
+# 1. Copy this file to /etc/systemd/system/
+# 2. Edit paths and user below
+# 3. Enable: sudo systemctl enable vpn-lan-bridge
+# 4. Start: sudo systemctl start vpn-lan-bridge
+# 5. Check status: sudo systemctl status vpn-lan-bridge
+#
+# Logs: journalctl -u vpn-lan-bridge -f
+
+[Unit]
+Description=VPN LAN Bridge - TCP proxy for bypassing VPN routing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Update this to your username
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+
+# Update this path to where you cloned the repository
+WorkingDirectory=/home/YOUR_USERNAME/vpn-lan-bridge
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/vpn-lan-bridge/scripts/lan-bridge.py
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5
+
+# Environment variables (alternative to config.sh)
+# Environment=LAN_BRIDGE_LOCAL_IP=192.168.1.100
+# Environment=LAN_BRIDGE_REMOTE_HOST=192.168.1.50
+# Environment=LAN_BRIDGE_REMOTE_PORT=24800
+
+[Install]
+WantedBy=multi-user.target

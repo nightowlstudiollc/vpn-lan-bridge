@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    VPN LAN Bridge - LaunchAgent for macOS
+
+    Installation:
+    1. Copy this file to ~/Library/LaunchAgents/
+    2. Edit the paths below to match your installation
+    3. Load with: launchctl load ~/Library/LaunchAgents/com.vpn-lan-bridge.plist
+
+    To unload: launchctl unload ~/Library/LaunchAgents/com.vpn-lan-bridge.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vpn-lan-bridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Update this path to your Python installation -->
+        <string>/usr/bin/python3</string>
+        <!-- Update this path to where you cloned the repository -->
+        <string>/Users/YOUR_USERNAME/Developer/vpn-lan-bridge/scripts/lan-bridge.py</string>
+    </array>
+
+    <!-- Start when user logs in -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it crashes -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Log output -->
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/log/lan-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/log/lan-bridge.log</string>
+
+    <!-- Working directory (for config.sh) -->
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USERNAME/Developer/vpn-lan-bridge</string>
+
+    <!-- Optional: Environment variables instead of config file -->
+    <!--
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LAN_BRIDGE_LOCAL_IP</key>
+        <string>192.168.1.100</string>
+        <key>LAN_BRIDGE_REMOTE_HOST</key>
+        <string>192.168.1.50</string>
+        <key>LAN_BRIDGE_REMOTE_PORT</key>
+        <string>24800</string>
+    </dict>
+    -->
+</dict>
+</plist>

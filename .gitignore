@@ -1,0 +1,41 @@
+# Configuration (contains personal IPs)
+config.sh
+
+# Logs
+*.log
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.eggs/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temp files
+*.tmp
+*.bak
+/tmp/
+
+# Lock files
+*.lock

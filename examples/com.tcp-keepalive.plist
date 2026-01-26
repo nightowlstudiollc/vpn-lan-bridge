@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    TCP Keepalive Configuration - LaunchDaemon for macOS
+
+    This runs at boot to set aggressive TCP keepalive values.
+
+    Installation:
+    1. Copy this file to /Library/LaunchDaemons/
+    2. Set permissions: sudo chown root:wheel /Library/LaunchDaemons/com.tcp-keepalive.plist
+    3. Set permissions: sudo chmod 644 /Library/LaunchDaemons/com.tcp-keepalive.plist
+    4. The settings will apply on next reboot, or load immediately with:
+       sudo launchctl load /Library/LaunchDaemons/com.tcp-keepalive.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tcp-keepalive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <!-- Aggressive keepalive: 30s idle, 10s interval, 6 probes, always enabled -->
+        <string>sysctl -w net.inet.tcp.keepidle=30000 net.inet.tcp.keepintvl=10000 net.inet.tcp.keepcnt=6 net.inet.tcp.always_keepalive=1</string>
+    </array>
+
+    <!-- Run at boot -->
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
