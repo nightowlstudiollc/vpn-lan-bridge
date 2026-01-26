@@ -1,0 +1,9 @@
+# VPN LAN Bridge has no external dependencies
+# Uses Python 3.7+ standard library only
+#
+# This file exists for pip compatibility and to document the Python version requirement
+# Install with: pip3 install -r requirements.txt
+# (Nothing will be installed, but this verifies Python 3.7+ is available)
+
+# Python 3.7+ is required
+# Check your version with: python3 --version

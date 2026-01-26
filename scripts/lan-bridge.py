@@ -8,9 +8,10 @@ connections to your physical LAN IP, forcing traffic through the local
 interface instead of the VPN tunnel.
 
 Usage:
-    ./lan-bridge.py                          # Use config.sh in parent directory
-    ./lan-bridge.py --config /path/to/config # Use specific config file
-    ./lan-bridge.py --lan-ip 192.168.1.100 --remote-host 192.168.1.50 --remote-port 24800
+    ./lan-bridge.py                          # Use config.sh in parent
+    ./lan-bridge.py --config /path/to/config # Use specific config
+    ./lan-bridge.py --lan-ip 192.168.1.100 --remote-host 192.168.1.50 \\
+        --remote-port 24800
 
 Environment variables (alternative to config file):
     LAN_BRIDGE_LOCAL_IP     Your computer's LAN IP
@@ -20,24 +21,32 @@ Environment variables (alternative to config file):
 """
 
 import argparse
+import ipaddress
 import logging
 import os
 import signal
 import socket
-import subprocess
 import sys
 import threading
 from pathlib import Path
 
+__version__ = "1.0.0"
+
+# Require Python 3.7+
+if sys.version_info < (3, 7):
+    print("ERROR: Python 3.7 or higher required", file=sys.stderr)
+    print(f"Current version: {sys.version}", file=sys.stderr)
+    sys.exit(1)
+
 # Defaults
 DEFAULT_BUFFER_SIZE = 65536
-DEFAULT_PROXY_HOST = '127.0.0.1'
+DEFAULT_PROXY_HOST = "127.0.0.1"
 
 # Logging setup
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -45,8 +54,14 @@ logger = logging.getLogger(__name__)
 class LANBridge:
     """TCP proxy that binds to a specific source IP to bypass VPN routing."""
 
-    def __init__(self, local_lan_ip: str, remote_host: str, remote_port: int,
-                 proxy_host: str = DEFAULT_PROXY_HOST, proxy_port: int = None):
+    def __init__(
+        self,
+        local_lan_ip: str,
+        remote_host: str,
+        remote_port: int,
+        proxy_host: str = DEFAULT_PROXY_HOST,
+        proxy_port: int = None,
+    ):
         self.local_lan_ip = local_lan_ip
         self.remote_host = remote_host
         self.remote_port = remote_port
@@ -55,6 +70,8 @@ class LANBridge:
         self.running = False
         self.server_socket = None
         self.connections = []
+        self.connections_lock = threading.Lock()
+        self.pid_file = f"/tmp/lan-bridge-{self.proxy_port}.pid"
 
     def start(self):
         """Start the proxy server."""
@@ -73,36 +90,90 @@ class LANBridge:
         self.server_socket.listen(5)
         self.server_socket.settimeout(1.0)
 
-        logger.info(f"LAN Bridge started")
+        logger.info("LAN Bridge started")
         logger.info(f"  Listening on:    {self.proxy_host}:{self.proxy_port}")
         logger.info(f"  Forwarding to:   {self.remote_host}:{self.remote_port}")
         logger.info(f"  Via LAN IP:      {self.local_lan_ip}")
 
-        while self.running:
-            try:
-                client_sock, client_addr = self.server_socket.accept()
-                logger.info(f"Connection from {client_addr[0]}:{client_addr[1]}")
+        self.write_pid_file()
+        cleanup_counter = 0
 
-                thread = threading.Thread(
-                    target=self._handle_client,
-                    args=(client_sock, client_addr),
-                    daemon=True
-                )
-                thread.start()
-                self.connections.append(thread)
+        try:
+            while self.running:
+                try:
+                    client_sock, client_addr = self.server_socket.accept()
+                    logger.info(f"Connection from {client_addr[0]}:{client_addr[1]}")
 
-            except socket.timeout:
-                continue
-            except Exception as e:
-                if self.running:
-                    logger.error(f"Accept error: {e}")
+                    thread = threading.Thread(
+                        target=self._handle_client,
+                        args=(client_sock, client_addr),
+                        daemon=True,  # Allow process to exit even if threads running
+                    )
+                    thread.start()
 
-        self._cleanup()
+                    with self.connections_lock:
+                        self.connections.append(thread)
+
+                    # Cleanup every 100 connections to avoid overhead
+                    cleanup_counter += 1
+                    if cleanup_counter >= 100:
+                        self.cleanup_dead_threads()
+                        cleanup_counter = 0
+
+                except socket.timeout:
+                    # Cleanup on timeout (happens every second due to settimeout(1.0))
+                    self.cleanup_dead_threads()
+                    continue
+                except Exception as e:
+                    if self.running:
+                        logger.error(f"Accept error: {e}")
+        finally:
+            self.remove_pid_file()
+            self._cleanup()
 
     def stop(self):
-        """Stop the proxy server."""
-        logger.info("Shutting down...")
+        """Stop accepting connections and wait for existing ones to finish"""
+        logger.info("Stopping proxy...")
         self.running = False
+        if self.server_socket:
+            self.server_socket.close()
+
+        # Wait for active connections with timeout
+        with self.connections_lock:
+            active_count = len([t for t in self.connections if t.is_alive()])
+
+        if active_count > 0:
+            logger.info(f"Waiting for {active_count} active connection(s) to finish...")
+            for thread in self.connections:
+                thread.join(timeout=5.0)  # Wait max 5 seconds per connection
+
+        logger.info("Proxy stopped")
+
+    def cleanup_dead_threads(self):
+        """Remove completed threads from connections list to prevent memory leak"""
+        with self.connections_lock:
+            before = len(self.connections)
+            self.connections = [t for t in self.connections if t.is_alive()]
+            removed = before - len(self.connections)
+            if removed > 0:
+                logger.debug(f"Cleaned up {removed} completed connection(s)")
+
+    def write_pid_file(self):
+        """Write PID file for watchdog to find us"""
+        try:
+            with open(self.pid_file, "w") as f:
+                f.write(str(os.getpid()))
+            logger.debug(f"Wrote PID file: {self.pid_file}")
+        except IOError as e:
+            logger.warning(f"Could not write PID file: {e}")
+
+    def remove_pid_file(self):
+        """Clean up PID file on exit"""
+        try:
+            os.remove(self.pid_file)
+            logger.debug(f"Removed PID file: {self.pid_file}")
+        except OSError:
+            pass
 
     def _handle_client(self, client_sock: socket.socket, client_addr: tuple):
         """Handle a single client connection."""
@@ -117,7 +188,10 @@ class LANBridge:
             remote_sock.bind((self.local_lan_ip, 0))
             remote_sock.connect((self.remote_host, self.remote_port))
 
-            logger.info(f"Connected to {self.remote_host}:{self.remote_port} via {self.local_lan_ip}")
+            logger.info(
+                f"Connected to {self.remote_host}:{self.remote_port} "
+                f"via {self.local_lan_ip}"
+            )
 
             # Remove timeout for normal operation
             remote_sock.settimeout(None)
@@ -125,8 +199,16 @@ class LANBridge:
 
             # Bidirectional forwarding
             threads = [
-                threading.Thread(target=self._forward, args=(client_sock, remote_sock, "client→remote"), daemon=True),
-                threading.Thread(target=self._forward, args=(remote_sock, client_sock, "remote→client"), daemon=True),
+                threading.Thread(
+                    target=self._forward,
+                    args=(client_sock, remote_sock, "client→remote"),
+                    daemon=True,
+                ),
+                threading.Thread(
+                    target=self._forward,
+                    args=(remote_sock, client_sock, "remote→client"),
+                    daemon=True,
+                ),
             ]
 
             for t in threads:
@@ -135,13 +217,20 @@ class LANBridge:
             for t in threads:
                 t.join()
 
+        except socket.gaierror as e:
+            logger.error(f"DNS resolution failed for {self.remote_host}: {e}")
+            logger.error("Check that REMOTE_HOST is a valid IP address or hostname")
         except socket.timeout:
-            logger.warning(f"Connection to {self.remote_host}:{self.remote_port} timed out")
+            logger.warning(
+                f"Connection to {self.remote_host}:{self.remote_port} timed out"
+            )
         except ConnectionRefusedError:
-            logger.warning(f"Connection refused by {self.remote_host}:{self.remote_port}")
+            logger.warning(
+                f"Connection refused by {self.remote_host}:{self.remote_port}"
+            )
         except OSError as e:
-            if "No route to host" in str(e):
-                logger.error(f"No route to host - VPN may be blocking LAN access")
+            if e.errno == 65:  # No route to host
+                logger.error("No route to host - VPN may be blocking LAN access")
                 logger.error(f"Verify LAN IP {self.local_lan_ip} is correct")
             else:
                 logger.error(f"Connection error: {e}")
@@ -182,37 +271,70 @@ class LANBridge:
 
 
 def load_config(config_path: str) -> dict:
-    """Load configuration from a shell-style config file."""
+    """
+    Parse config file as simple KEY=value pairs (no shell execution).
+
+    Supports:
+    - KEY=value
+    - export KEY=value (export keyword stripped)
+    - KEY="value" or KEY='value' (quotes stripped)
+    - # comments
+    - Empty lines
+
+    Does NOT support (treated as literal strings):
+    - Command substitution: KEY=$(command)
+    - Variable expansion: KEY=${OTHER_VAR}
+    - Shell control flow: if/then/else, loops
+    """
     config = {}
-
-    if not os.path.exists(config_path):
-        return config
-
     try:
-        # Source the config file and extract variables
-        result = subprocess.run(
-            ['bash', '-c', f'source "{config_path}" && env'],
-            capture_output=True,
-            text=True
-        )
+        with open(config_path) as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
 
-        for line in result.stdout.split('\n'):
-            if '=' in line:
-                key, _, value = line.partition('=')
+                # Skip empty lines and comments
+                if not line or line.startswith("#"):
+                    continue
+
+                # Parse KEY=value
+                if "=" not in line:
+                    logger.warning(
+                        f"{config_path}:{line_num}: "
+                        f"Skipping invalid line (no '='): {line}"
+                    )
+                    continue
+
+                key, _, value = line.partition("=")
+                key = key.strip()
+
+                # Strip 'export' keyword if present (for shell compatibility)
+                if key.startswith("export "):
+                    key = key[7:].strip()
+
+                # Strip surrounding quotes if present
+                value = value.strip()
+                if (value.startswith('"') and value.endswith('"')) or (
+                    value.startswith("'") and value.endswith("'")
+                ):
+                    value = value[1:-1]
+
                 config[key] = value
 
+        return config
+    except FileNotFoundError:
+        logger.warning(f"Config file not found: {config_path}")
+        return {}
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}")
-
-    return config
+        return {}
 
 
 def find_config_file() -> str:
     """Find config file in standard locations."""
     locations = [
-        Path(__file__).parent.parent / 'config.sh',
-        Path.home() / '.config' / 'lan-bridge' / 'config.sh',
-        Path('/etc/lan-bridge/config.sh'),
+        Path(__file__).parent.parent / "config.sh",
+        Path.home() / ".config" / "lan-bridge" / "config.sh",
+        Path("/etc/lan-bridge/config.sh"),
     ]
 
     for path in locations:
@@ -222,28 +344,81 @@ def find_config_file() -> str:
     return None
 
 
+def validate_ip(ip_str: str, param_name: str) -> str:
+    """
+    Validate IP address format and return canonical form.
+    Exits with error message if invalid.
+    """
+    try:
+        # Validate IPv4 format
+        ip = ipaddress.IPv4Address(ip_str)
+        ip_str_canonical = str(ip)
+
+        # Warn if it looks like a VPN IP (common VPN ranges)
+        first_octet = int(ip_str.split(".")[0])
+        if first_octet == 10 or (
+            first_octet == 172 and 16 <= int(ip_str.split(".")[1]) <= 31
+        ):
+            logger.warning(
+                f"{param_name} {ip_str} is in a private range often used by VPNs"
+            )
+            logger.warning(
+                "Ensure this is your physical LAN IP, not your VPN tunnel IP"
+            )
+
+        return ip_str_canonical
+    except (ipaddress.AddressValueError, ValueError) as e:
+        logger.error(f"Invalid IP address for {param_name}: {ip_str}")
+        logger.error("Expected format: 192.168.1.100")
+        logger.error(f"Error: {e}")
+        sys.exit(1)
+
+
+def validate_port(port: int, param_name: str) -> int:
+    """
+    Validate port is in valid range (1-65535).
+    Exits with error message if invalid.
+    """
+    try:
+        port = int(port)
+        if not (1 <= port <= 65535):
+            raise ValueError(f"Port must be between 1 and 65535, got {port}")
+        return port
+    except (ValueError, TypeError) as e:
+        logger.error(f"Invalid port for {param_name}: {port}")
+        logger.error("Port must be an integer between 1 and 65535")
+        logger.error(f"Error: {e}")
+        sys.exit(1)
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='TCP proxy for bypassing VPN routing to local network services',
+        description="TCP proxy for bypassing VPN routing to local network services",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
-    parser.add_argument('--config', '-c',
-                        help='Path to config file (default: auto-detect)')
-    parser.add_argument('--lan-ip', '-l',
-                        help='Your computer\'s LAN IP address')
-    parser.add_argument('--remote-host', '-r',
-                        help='Remote service hostname or IP')
-    parser.add_argument('--remote-port', '-p', type=int,
-                        help='Remote service port')
-    parser.add_argument('--proxy-port', type=int,
-                        help='Local proxy port (default: same as remote)')
-    parser.add_argument('--proxy-host', default=DEFAULT_PROXY_HOST,
-                        help=f'Local proxy bind address (default: {DEFAULT_PROXY_HOST})')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Enable debug logging')
+    parser.add_argument(
+        "--config", "-c", help="Path to config file (default: auto-detect)"
+    )
+    parser.add_argument("--lan-ip", "-l", help="Your computer's LAN IP address")
+    parser.add_argument("--remote-host", "-r", help="Remote service hostname or IP")
+    parser.add_argument("--remote-port", "-p", type=int, help="Remote service port")
+    parser.add_argument(
+        "--proxy-port", type=int, help="Local proxy port (default: same as remote)"
+    )
+    parser.add_argument(
+        "--proxy-host",
+        default=DEFAULT_PROXY_HOST,
+        help=f"Local proxy bind address (default: {DEFAULT_PROXY_HOST})",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable debug logging"
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
     return parser.parse_args()
 
@@ -265,32 +440,34 @@ def main():
 
     # Get values with fallback chain
     local_lan_ip = (
-        args.lan_ip or
-        os.environ.get('LAN_BRIDGE_LOCAL_IP') or
-        config.get('LOCAL_LAN_IP') or
-        config.get('LAN_BRIDGE_LOCAL_IP')
+        args.lan_ip
+        or os.environ.get("LAN_BRIDGE_LOCAL_IP")
+        or config.get("LOCAL_LAN_IP")
+        or config.get("LAN_BRIDGE_LOCAL_IP")
     )
 
     remote_host = (
-        args.remote_host or
-        os.environ.get('LAN_BRIDGE_REMOTE_HOST') or
-        config.get('REMOTE_HOST') or
-        config.get('LAN_BRIDGE_REMOTE_HOST')
+        args.remote_host
+        or os.environ.get("LAN_BRIDGE_REMOTE_HOST")
+        or config.get("REMOTE_HOST")
+        or config.get("LAN_BRIDGE_REMOTE_HOST")
     )
 
     remote_port_str = (
-        str(args.remote_port) if args.remote_port else
-        os.environ.get('LAN_BRIDGE_REMOTE_PORT') or
-        config.get('REMOTE_PORT') or
-        config.get('LAN_BRIDGE_REMOTE_PORT')
+        str(args.remote_port)
+        if args.remote_port
+        else os.environ.get("LAN_BRIDGE_REMOTE_PORT")
+        or config.get("REMOTE_PORT")
+        or config.get("LAN_BRIDGE_REMOTE_PORT")
     )
 
     proxy_port_str = (
-        str(args.proxy_port) if args.proxy_port else
-        os.environ.get('LAN_BRIDGE_PROXY_PORT') or
-        config.get('PROXY_PORT') or
-        config.get('LAN_BRIDGE_PROXY_PORT') or
-        remote_port_str
+        str(args.proxy_port)
+        if args.proxy_port
+        else os.environ.get("LAN_BRIDGE_PROXY_PORT")
+        or config.get("PROXY_PORT")
+        or config.get("LAN_BRIDGE_PROXY_PORT")
+        or remote_port_str
     )
 
     # Validate required parameters
@@ -302,6 +479,11 @@ def main():
             logger.error("No config file found. Create config.sh or use --config")
         sys.exit(1)
 
+    # Validate local LAN IP (must be IPv4)
+    local_lan_ip = validate_ip(local_lan_ip, "LOCAL_LAN_IP")
+    # Note: remote_host can be IP or hostname - validated by socket.connect()
+
+    # Validate ports
     try:
         remote_port = int(remote_port_str)
         proxy_port = int(proxy_port_str) if proxy_port_str else remote_port
@@ -309,13 +491,16 @@ def main():
         logger.error(f"Invalid port number: {e}")
         sys.exit(1)
 
+    remote_port = validate_port(remote_port, "REMOTE_PORT")
+    proxy_port = validate_port(proxy_port, "PROXY_PORT")
+
     # Create and start bridge
     bridge = LANBridge(
         local_lan_ip=local_lan_ip,
         remote_host=remote_host,
         remote_port=remote_port,
         proxy_host=args.proxy_host,
-        proxy_port=proxy_port
+        proxy_port=proxy_port,
     )
 
     # Handle signals
@@ -329,5 +514,5 @@ def main():
     bridge.start()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
