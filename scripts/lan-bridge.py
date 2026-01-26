@@ -25,14 +25,13 @@ import logging
 import os
 import signal
 import socket
-import subprocess
 import sys
 import threading
 from pathlib import Path
 
 __version__ = "1.0.0"
 
-# Require Python 3.7+ (for subprocess.run capture_output parameter)
+# Require Python 3.7+
 if sys.version_info < (3, 7):
     print("ERROR: Python 3.7 or higher required", file=sys.stderr)
     print(f"Current version: {sys.version}", file=sys.stderr)
@@ -212,29 +211,62 @@ class LANBridge:
 
 
 def load_config(config_path: str) -> dict:
-    """Load configuration from a shell-style config file."""
+    """
+    Parse config file as simple KEY=value pairs (no shell execution).
+
+    Supports:
+    - KEY=value
+    - export KEY=value (export keyword stripped)
+    - KEY="value" or KEY='value' (quotes stripped)
+    - # comments
+    - Empty lines
+
+    Does NOT support (treated as literal strings):
+    - Command substitution: KEY=$(command)
+    - Variable expansion: KEY=${OTHER_VAR}
+    - Shell control flow: if/then/else, loops
+    """
     config = {}
-
-    if not os.path.exists(config_path):
-        return config
-
     try:
-        # Source the config file and extract variables
-        result = subprocess.run(
-            ["bash", "-c", f'source "{config_path}" && env'],
-            capture_output=True,
-            text=True,
-        )
+        with open(config_path) as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
 
-        for line in result.stdout.split("\n"):
-            if "=" in line:
+                # Skip empty lines and comments
+                if not line or line.startswith("#"):
+                    continue
+
+                # Parse KEY=value
+                if "=" not in line:
+                    logger.warning(
+                        f"{config_path}:{line_num}: "
+                        f"Skipping invalid line (no '='): {line}"
+                    )
+                    continue
+
                 key, _, value = line.partition("=")
+                key = key.strip()
+
+                # Strip 'export' keyword if present (for shell compatibility)
+                if key.startswith("export "):
+                    key = key[7:].strip()
+
+                # Strip surrounding quotes if present
+                value = value.strip()
+                if (value.startswith('"') and value.endswith('"')) or (
+                    value.startswith("'") and value.endswith("'")
+                ):
+                    value = value[1:-1]
+
                 config[key] = value
 
+        return config
+    except FileNotFoundError:
+        logger.warning(f"Config file not found: {config_path}")
+        return {}
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}")
-
-    return config
+        return {}
 
 
 def find_config_file() -> str:

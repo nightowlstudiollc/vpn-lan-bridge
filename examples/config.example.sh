@@ -3,7 +3,31 @@
 #
 # Copy this file to config.sh in the repository root and edit with your values.
 # Alternatively, set these as environment variables or pass as command-line arguments.
-
+#
+# ==============================================================================
+# CONFIGURATION FILE FORMAT
+# ==============================================================================
+#
+# This file uses simple KEY=value syntax (not executed as shell code by lan-bridge.py).
+# Each line should contain one variable assignment.
+#
+# SUPPORTED:
+#   KEY=value                    ✓ Simple assignment
+#   export KEY=value             ✓ Export keyword (stripped)
+#   KEY="value"                  ✓ Double quotes (stripped)
+#   KEY='value'                  ✓ Single quotes (stripped)
+#   # Comment                    ✓ Comments ignored
+#
+# NOT SUPPORTED when loaded by lan-bridge.py (treated as literal strings):
+#   KEY=$(command)               ✗ Command substitution
+#   KEY=${OTHER_VAR}             ✗ Variable expansion
+#   if [ ... ]; then ...         ✗ Shell control flow
+#
+# For dynamic configuration, use environment variables or command-line arguments.
+#
+# Note: This file can still be sourced as a shell script for backward compatibility,
+# but lan-bridge.py reads it as a simple config file without shell execution.
+#
 # ==============================================================================
 # REQUIRED SETTINGS
 # ==============================================================================
@@ -11,17 +35,17 @@
 # Your computer's LAN IP address (the physical network interface, NOT the VPN)
 # Find it with: ifconfig en0 | grep "inet "
 # Example: 192.168.1.100, 10.0.15.68, 172.16.0.50
-LOCAL_LAN_IP="192.168.1.100"
+export LOCAL_LAN_IP="192.168.1.100"
 
 # The remote service you want to reach on your local network
 # This is the IP or hostname of the machine running the service (e.g., Synergy server)
-REMOTE_HOST="192.168.1.50"
+export REMOTE_HOST="192.168.1.50"
 
 # The port the remote service listens on
 # Synergy/Barrier: 24800
 # SMB: 445
 # Postgres: 5432
-REMOTE_PORT="24800"
+export REMOTE_PORT="24800"
 
 # ==============================================================================
 # OPTIONAL SETTINGS
