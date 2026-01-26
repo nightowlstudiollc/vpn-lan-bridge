@@ -45,11 +45,13 @@
     <!--
     <key>EnvironmentVariables</key>
     <dict>
-        <key>LAN_BRIDGE_LOCAL_IP</key>
+        <key>LOCAL_LAN_IP</key>
         <string>192.168.1.100</string>
-        <key>LAN_BRIDGE_REMOTE_HOST</key>
+        <key>REMOTE_HOST</key>
         <string>192.168.1.50</string>
-        <key>LAN_BRIDGE_REMOTE_PORT</key>
+        <key>REMOTE_PORT</key>
+        <string>24800</string>
+        <key>PROXY_PORT</key>
         <string>24800</string>
     </dict>
     -->
