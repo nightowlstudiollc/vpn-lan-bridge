@@ -19,8 +19,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "${SCRIPT_DIR}")"
-LOG_DIR="${LOG_DIR:-${HOME}/log}"
-LOG_FILE="${LOG_DIR}/lan-bridge-watchdog.log"
+
+# Use platform-appropriate log directory
+if [[ "$(uname)" == "Darwin" ]]; then
+  LOG_DIR="${LOG_DIR:-${HOME}/Library/Logs/vpn-lan-bridge}"
+else
+  LOG_DIR="${LOG_DIR:-${HOME}/.local/log/vpn-lan-bridge}"
+fi
+LOG_FILE="${LOG_DIR}/watchdog.log"
 LOCK_FILE="/tmp/lan-bridge-watchdog.lock"
 COOLDOWN_FILE="/tmp/lan-bridge-watchdog-cooldown"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-120}"

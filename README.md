@@ -272,7 +272,11 @@ ping 192.168.1.50  # Fails - goes through VPN
 2. Check the proxy log:
 
    ```bash
-   tail -f ~/log/lan-bridge.log
+   # macOS
+   tail -f ~/Library/Logs/vpn-lan-bridge/lan-bridge.log
+
+   # Linux
+   tail -f ~/.local/log/vpn-lan-bridge/lan-bridge.log
    ```
 
 3. Verify your LAN IP is correct:
