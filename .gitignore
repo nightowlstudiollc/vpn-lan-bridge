@@ -39,3 +39,4 @@ env/
 
 # Lock files
 *.lock
+.claude/
