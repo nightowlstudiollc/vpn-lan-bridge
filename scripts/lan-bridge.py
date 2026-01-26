@@ -71,6 +71,7 @@ class LANBridge:
         self.server_socket = None
         self.connections = []
         self.connections_lock = threading.Lock()
+        self.pid_file = f"/tmp/lan-bridge-{self.proxy_port}.pid"
 
     def start(self):
         """Start the proxy server."""
@@ -94,38 +95,41 @@ class LANBridge:
         logger.info(f"  Forwarding to:   {self.remote_host}:{self.remote_port}")
         logger.info(f"  Via LAN IP:      {self.local_lan_ip}")
 
+        self.write_pid_file()
         cleanup_counter = 0
 
-        while self.running:
-            try:
-                client_sock, client_addr = self.server_socket.accept()
-                logger.info(f"Connection from {client_addr[0]}:{client_addr[1]}")
+        try:
+            while self.running:
+                try:
+                    client_sock, client_addr = self.server_socket.accept()
+                    logger.info(f"Connection from {client_addr[0]}:{client_addr[1]}")
 
-                thread = threading.Thread(
-                    target=self._handle_client,
-                    args=(client_sock, client_addr),
-                    daemon=True,  # Allow process to exit even if threads running
-                )
-                thread.start()
+                    thread = threading.Thread(
+                        target=self._handle_client,
+                        args=(client_sock, client_addr),
+                        daemon=True,  # Allow process to exit even if threads running
+                    )
+                    thread.start()
 
-                with self.connections_lock:
-                    self.connections.append(thread)
+                    with self.connections_lock:
+                        self.connections.append(thread)
 
-                # Cleanup every 100 connections to avoid overhead
-                cleanup_counter += 1
-                if cleanup_counter >= 100:
+                    # Cleanup every 100 connections to avoid overhead
+                    cleanup_counter += 1
+                    if cleanup_counter >= 100:
+                        self.cleanup_dead_threads()
+                        cleanup_counter = 0
+
+                except socket.timeout:
+                    # Cleanup on timeout (happens every second due to settimeout(1.0))
                     self.cleanup_dead_threads()
-                    cleanup_counter = 0
-
-            except socket.timeout:
-                # Cleanup on timeout too (happens every second due to settimeout(1.0))
-                self.cleanup_dead_threads()
-                continue
-            except Exception as e:
-                if self.running:
-                    logger.error(f"Accept error: {e}")
-
-        self._cleanup()
+                    continue
+                except Exception as e:
+                    if self.running:
+                        logger.error(f"Accept error: {e}")
+        finally:
+            self.remove_pid_file()
+            self._cleanup()
 
     def stop(self):
         """Stop accepting connections and wait for existing ones to finish"""
@@ -153,6 +157,23 @@ class LANBridge:
             removed = before - len(self.connections)
             if removed > 0:
                 logger.debug(f"Cleaned up {removed} completed connection(s)")
+
+    def write_pid_file(self):
+        """Write PID file for watchdog to find us"""
+        try:
+            with open(self.pid_file, "w") as f:
+                f.write(str(os.getpid()))
+            logger.debug(f"Wrote PID file: {self.pid_file}")
+        except IOError as e:
+            logger.warning(f"Could not write PID file: {e}")
+
+    def remove_pid_file(self):
+        """Clean up PID file on exit"""
+        try:
+            os.remove(self.pid_file)
+            logger.debug(f"Removed PID file: {self.pid_file}")
+        except OSError:
+            pass
 
     def _handle_client(self, client_sock: socket.socket, client_addr: tuple):
         """Handle a single client connection."""
@@ -196,6 +217,9 @@ class LANBridge:
             for t in threads:
                 t.join()
 
+        except socket.gaierror as e:
+            logger.error(f"DNS resolution failed for {self.remote_host}: {e}")
+            logger.error("Check that REMOTE_HOST is a valid IP address or hostname")
         except socket.timeout:
             logger.warning(
                 f"Connection to {self.remote_host}:{self.remote_port} timed out"
@@ -205,7 +229,7 @@ class LANBridge:
                 f"Connection refused by {self.remote_host}:{self.remote_port}"
             )
         except OSError as e:
-            if "No route to host" in str(e):
+            if e.errno == 65:  # No route to host
                 logger.error("No route to host - VPN may be blocking LAN access")
                 logger.error(f"Verify LAN IP {self.local_lan_ip} is correct")
             else:
