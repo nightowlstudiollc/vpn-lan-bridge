@@ -8,9 +8,10 @@ connections to your physical LAN IP, forcing traffic through the local
 interface instead of the VPN tunnel.
 
 Usage:
-    ./lan-bridge.py                          # Use config.sh in parent directory
-    ./lan-bridge.py --config /path/to/config # Use specific config file
-    ./lan-bridge.py --lan-ip 192.168.1.100 --remote-host 192.168.1.50 --remote-port 24800
+    ./lan-bridge.py                          # Use config.sh in parent
+    ./lan-bridge.py --config /path/to/config # Use specific config
+    ./lan-bridge.py --lan-ip 192.168.1.100 --remote-host 192.168.1.50 \\
+        --remote-port 24800
 
 Environment variables (alternative to config file):
     LAN_BRIDGE_LOCAL_IP     Your computer's LAN IP
@@ -29,15 +30,23 @@ import sys
 import threading
 from pathlib import Path
 
+__version__ = "1.0.0"
+
+# Require Python 3.7+ (for subprocess.run capture_output parameter)
+if sys.version_info < (3, 7):
+    print("ERROR: Python 3.7 or higher required", file=sys.stderr)
+    print(f"Current version: {sys.version}", file=sys.stderr)
+    sys.exit(1)
+
 # Defaults
 DEFAULT_BUFFER_SIZE = 65536
-DEFAULT_PROXY_HOST = '127.0.0.1'
+DEFAULT_PROXY_HOST = "127.0.0.1"
 
 # Logging setup
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -45,8 +54,14 @@ logger = logging.getLogger(__name__)
 class LANBridge:
     """TCP proxy that binds to a specific source IP to bypass VPN routing."""
 
-    def __init__(self, local_lan_ip: str, remote_host: str, remote_port: int,
-                 proxy_host: str = DEFAULT_PROXY_HOST, proxy_port: int = None):
+    def __init__(
+        self,
+        local_lan_ip: str,
+        remote_host: str,
+        remote_port: int,
+        proxy_host: str = DEFAULT_PROXY_HOST,
+        proxy_port: int = None,
+    ):
         self.local_lan_ip = local_lan_ip
         self.remote_host = remote_host
         self.remote_port = remote_port
@@ -73,7 +88,7 @@ class LANBridge:
         self.server_socket.listen(5)
         self.server_socket.settimeout(1.0)
 
-        logger.info(f"LAN Bridge started")
+        logger.info("LAN Bridge started")
         logger.info(f"  Listening on:    {self.proxy_host}:{self.proxy_port}")
         logger.info(f"  Forwarding to:   {self.remote_host}:{self.remote_port}")
         logger.info(f"  Via LAN IP:      {self.local_lan_ip}")
@@ -86,7 +101,7 @@ class LANBridge:
                 thread = threading.Thread(
                     target=self._handle_client,
                     args=(client_sock, client_addr),
-                    daemon=True
+                    daemon=True,
                 )
                 thread.start()
                 self.connections.append(thread)
@@ -117,7 +132,10 @@ class LANBridge:
             remote_sock.bind((self.local_lan_ip, 0))
             remote_sock.connect((self.remote_host, self.remote_port))
 
-            logger.info(f"Connected to {self.remote_host}:{self.remote_port} via {self.local_lan_ip}")
+            logger.info(
+                f"Connected to {self.remote_host}:{self.remote_port} "
+                f"via {self.local_lan_ip}"
+            )
 
             # Remove timeout for normal operation
             remote_sock.settimeout(None)
@@ -125,8 +143,16 @@ class LANBridge:
 
             # Bidirectional forwarding
             threads = [
-                threading.Thread(target=self._forward, args=(client_sock, remote_sock, "client→remote"), daemon=True),
-                threading.Thread(target=self._forward, args=(remote_sock, client_sock, "remote→client"), daemon=True),
+                threading.Thread(
+                    target=self._forward,
+                    args=(client_sock, remote_sock, "client→remote"),
+                    daemon=True,
+                ),
+                threading.Thread(
+                    target=self._forward,
+                    args=(remote_sock, client_sock, "remote→client"),
+                    daemon=True,
+                ),
             ]
 
             for t in threads:
@@ -136,12 +162,16 @@ class LANBridge:
                 t.join()
 
         except socket.timeout:
-            logger.warning(f"Connection to {self.remote_host}:{self.remote_port} timed out")
+            logger.warning(
+                f"Connection to {self.remote_host}:{self.remote_port} timed out"
+            )
         except ConnectionRefusedError:
-            logger.warning(f"Connection refused by {self.remote_host}:{self.remote_port}")
+            logger.warning(
+                f"Connection refused by {self.remote_host}:{self.remote_port}"
+            )
         except OSError as e:
             if "No route to host" in str(e):
-                logger.error(f"No route to host - VPN may be blocking LAN access")
+                logger.error("No route to host - VPN may be blocking LAN access")
                 logger.error(f"Verify LAN IP {self.local_lan_ip} is correct")
             else:
                 logger.error(f"Connection error: {e}")
@@ -191,14 +221,14 @@ def load_config(config_path: str) -> dict:
     try:
         # Source the config file and extract variables
         result = subprocess.run(
-            ['bash', '-c', f'source "{config_path}" && env'],
+            ["bash", "-c", f'source "{config_path}" && env'],
             capture_output=True,
-            text=True
+            text=True,
         )
 
-        for line in result.stdout.split('\n'):
-            if '=' in line:
-                key, _, value = line.partition('=')
+        for line in result.stdout.split("\n"):
+            if "=" in line:
+                key, _, value = line.partition("=")
                 config[key] = value
 
     except Exception as e:
@@ -210,9 +240,9 @@ def load_config(config_path: str) -> dict:
 def find_config_file() -> str:
     """Find config file in standard locations."""
     locations = [
-        Path(__file__).parent.parent / 'config.sh',
-        Path.home() / '.config' / 'lan-bridge' / 'config.sh',
-        Path('/etc/lan-bridge/config.sh'),
+        Path(__file__).parent.parent / "config.sh",
+        Path.home() / ".config" / "lan-bridge" / "config.sh",
+        Path("/etc/lan-bridge/config.sh"),
     ]
 
     for path in locations:
@@ -225,25 +255,31 @@ def find_config_file() -> str:
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='TCP proxy for bypassing VPN routing to local network services',
+        description="TCP proxy for bypassing VPN routing to local network services",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
-    parser.add_argument('--config', '-c',
-                        help='Path to config file (default: auto-detect)')
-    parser.add_argument('--lan-ip', '-l',
-                        help='Your computer\'s LAN IP address')
-    parser.add_argument('--remote-host', '-r',
-                        help='Remote service hostname or IP')
-    parser.add_argument('--remote-port', '-p', type=int,
-                        help='Remote service port')
-    parser.add_argument('--proxy-port', type=int,
-                        help='Local proxy port (default: same as remote)')
-    parser.add_argument('--proxy-host', default=DEFAULT_PROXY_HOST,
-                        help=f'Local proxy bind address (default: {DEFAULT_PROXY_HOST})')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Enable debug logging')
+    parser.add_argument(
+        "--config", "-c", help="Path to config file (default: auto-detect)"
+    )
+    parser.add_argument("--lan-ip", "-l", help="Your computer's LAN IP address")
+    parser.add_argument("--remote-host", "-r", help="Remote service hostname or IP")
+    parser.add_argument("--remote-port", "-p", type=int, help="Remote service port")
+    parser.add_argument(
+        "--proxy-port", type=int, help="Local proxy port (default: same as remote)"
+    )
+    parser.add_argument(
+        "--proxy-host",
+        default=DEFAULT_PROXY_HOST,
+        help=f"Local proxy bind address (default: {DEFAULT_PROXY_HOST})",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable debug logging"
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
     return parser.parse_args()
 
@@ -265,32 +301,34 @@ def main():
 
     # Get values with fallback chain
     local_lan_ip = (
-        args.lan_ip or
-        os.environ.get('LAN_BRIDGE_LOCAL_IP') or
-        config.get('LOCAL_LAN_IP') or
-        config.get('LAN_BRIDGE_LOCAL_IP')
+        args.lan_ip
+        or os.environ.get("LAN_BRIDGE_LOCAL_IP")
+        or config.get("LOCAL_LAN_IP")
+        or config.get("LAN_BRIDGE_LOCAL_IP")
     )
 
     remote_host = (
-        args.remote_host or
-        os.environ.get('LAN_BRIDGE_REMOTE_HOST') or
-        config.get('REMOTE_HOST') or
-        config.get('LAN_BRIDGE_REMOTE_HOST')
+        args.remote_host
+        or os.environ.get("LAN_BRIDGE_REMOTE_HOST")
+        or config.get("REMOTE_HOST")
+        or config.get("LAN_BRIDGE_REMOTE_HOST")
     )
 
     remote_port_str = (
-        str(args.remote_port) if args.remote_port else
-        os.environ.get('LAN_BRIDGE_REMOTE_PORT') or
-        config.get('REMOTE_PORT') or
-        config.get('LAN_BRIDGE_REMOTE_PORT')
+        str(args.remote_port)
+        if args.remote_port
+        else os.environ.get("LAN_BRIDGE_REMOTE_PORT")
+        or config.get("REMOTE_PORT")
+        or config.get("LAN_BRIDGE_REMOTE_PORT")
     )
 
     proxy_port_str = (
-        str(args.proxy_port) if args.proxy_port else
-        os.environ.get('LAN_BRIDGE_PROXY_PORT') or
-        config.get('PROXY_PORT') or
-        config.get('LAN_BRIDGE_PROXY_PORT') or
-        remote_port_str
+        str(args.proxy_port)
+        if args.proxy_port
+        else os.environ.get("LAN_BRIDGE_PROXY_PORT")
+        or config.get("PROXY_PORT")
+        or config.get("LAN_BRIDGE_PROXY_PORT")
+        or remote_port_str
     )
 
     # Validate required parameters
@@ -315,7 +353,7 @@ def main():
         remote_host=remote_host,
         remote_port=remote_port,
         proxy_host=args.proxy_host,
-        proxy_port=proxy_port
+        proxy_port=proxy_port,
     )
 
     # Handle signals
@@ -329,5 +367,5 @@ def main():
     bridge.start()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
