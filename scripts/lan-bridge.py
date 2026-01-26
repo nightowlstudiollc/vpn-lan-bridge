@@ -479,9 +479,9 @@ def main():
             logger.error("No config file found. Create config.sh or use --config")
         sys.exit(1)
 
-    # Validate IP addresses
+    # Validate local LAN IP (must be IPv4)
     local_lan_ip = validate_ip(local_lan_ip, "LOCAL_LAN_IP")
-    remote_host = validate_ip(remote_host, "REMOTE_HOST")
+    # Note: remote_host can be IP or hostname - validated by socket.connect()
 
     # Validate ports
     try:
