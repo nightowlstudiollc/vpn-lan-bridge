@@ -85,11 +85,46 @@ acquire_lock() {
 # Create log directory
 mkdir -p "${LOG_DIR}"
 
-# Load configuration
+# Safe config loading - parse KEY=value only (no shell execution)
+load_config_safe() {
+  local config_file="$1"
+  [[ -f "$config_file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Strip comments
+    line="${line%%#*}"
+    # Trim whitespace
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    # Skip empty lines
+    [[ -z "$line" ]] && continue
+    # Skip lines without =
+    [[ "$line" != *=* ]] && continue
+
+    # Split on first =
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    # Strip 'export' prefix if present
+    key="${key#export }"
+    key="${key#"${key%%[![:space:]]*}"}"
+
+    # Strip quotes from value
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value#\'}"
+    value="${value%\'}"
+
+    # Export the variable
+    export "$key=$value"
+  done <"$config_file"
+}
+
+# Load configuration safely (no shell execution)
 if [[ -f "${REPO_DIR}/config.sh" ]]; then
-  source "${REPO_DIR}/config.sh"
+  load_config_safe "${REPO_DIR}/config.sh"
 elif [[ -f "${HOME}/.config/lan-bridge/config.sh" ]]; then
-  source "${HOME}/.config/lan-bridge/config.sh"
+  load_config_safe "${HOME}/.config/lan-bridge/config.sh"
 fi
 
 # Validate configuration

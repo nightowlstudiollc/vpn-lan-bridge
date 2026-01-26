@@ -10,6 +10,41 @@
 
 set -euo pipefail
 
+# Safe config loading - parse KEY=value only (no shell execution)
+load_config_safe() {
+  local config_file="$1"
+  [[ -f "$config_file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Strip comments
+    line="${line%%#*}"
+    # Trim whitespace
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    # Skip empty lines
+    [[ -z "$line" ]] && continue
+    # Skip lines without =
+    [[ "$line" != *=* ]] && continue
+
+    # Split on first =
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    # Strip 'export' prefix if present
+    key="${key#export }"
+    key="${key#"${key%%[![:space:]]*}"}"
+
+    # Strip quotes from value
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value#\'}"
+    value="${value%\'}"
+
+    # Export the variable
+    export "$key=$value"
+  done <"$config_file"
+}
+
 TARGET_HOST="${1:-}"
 
 echo "========================================"
@@ -162,9 +197,9 @@ if [[ -n "$TARGET_HOST" ]]; then
 
   # Test port connectivity (if nc available)
   echo ""
-  # Try to load REMOTE_PORT from config.sh if it exists
+  # Try to load REMOTE_PORT from config.sh if it exists (safe parsing, no execution)
   if [[ -f "config.sh" ]]; then
-    source "config.sh" 2>/dev/null || true
+    load_config_safe "config.sh" 2>/dev/null || true
   fi
   REMOTE_PORT="${REMOTE_PORT:-24800}"
   echo "  Port check (${REMOTE_PORT}):"

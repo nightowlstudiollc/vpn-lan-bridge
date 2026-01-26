@@ -25,9 +25,6 @@
 #
 # For dynamic configuration, use environment variables or command-line arguments.
 #
-# Note: This file can still be sourced as a shell script for backward compatibility,
-# but lan-bridge.py reads it as a simple config file without shell execution.
-#
 # ==============================================================================
 # REQUIRED SETTINGS
 # ==============================================================================
