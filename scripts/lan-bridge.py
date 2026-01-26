@@ -70,6 +70,7 @@ class LANBridge:
         self.running = False
         self.server_socket = None
         self.connections = []
+        self.connections_lock = threading.Lock()
 
     def start(self):
         """Start the proxy server."""
@@ -93,6 +94,8 @@ class LANBridge:
         logger.info(f"  Forwarding to:   {self.remote_host}:{self.remote_port}")
         logger.info(f"  Via LAN IP:      {self.local_lan_ip}")
 
+        cleanup_counter = 0
+
         while self.running:
             try:
                 client_sock, client_addr = self.server_socket.accept()
@@ -101,12 +104,22 @@ class LANBridge:
                 thread = threading.Thread(
                     target=self._handle_client,
                     args=(client_sock, client_addr),
-                    daemon=True,
+                    daemon=True,  # Allow process to exit even if threads running
                 )
                 thread.start()
-                self.connections.append(thread)
+
+                with self.connections_lock:
+                    self.connections.append(thread)
+
+                # Cleanup every 100 connections to avoid overhead
+                cleanup_counter += 1
+                if cleanup_counter >= 100:
+                    self.cleanup_dead_threads()
+                    cleanup_counter = 0
 
             except socket.timeout:
+                # Cleanup on timeout too (happens every second due to settimeout(1.0))
+                self.cleanup_dead_threads()
                 continue
             except Exception as e:
                 if self.running:
@@ -115,9 +128,31 @@ class LANBridge:
         self._cleanup()
 
     def stop(self):
-        """Stop the proxy server."""
-        logger.info("Shutting down...")
+        """Stop accepting connections and wait for existing ones to finish"""
+        logger.info("Stopping proxy...")
         self.running = False
+        if self.server_socket:
+            self.server_socket.close()
+
+        # Wait for active connections with timeout
+        with self.connections_lock:
+            active_count = len([t for t in self.connections if t.is_alive()])
+
+        if active_count > 0:
+            logger.info(f"Waiting for {active_count} active connection(s) to finish...")
+            for thread in self.connections:
+                thread.join(timeout=5.0)  # Wait max 5 seconds per connection
+
+        logger.info("Proxy stopped")
+
+    def cleanup_dead_threads(self):
+        """Remove completed threads from connections list to prevent memory leak"""
+        with self.connections_lock:
+            before = len(self.connections)
+            self.connections = [t for t in self.connections if t.is_alive()]
+            removed = before - len(self.connections)
+            if removed > 0:
+                logger.debug(f"Cleaned up {removed} completed connection(s)")
 
     def _handle_client(self, client_sock: socket.socket, client_addr: tuple):
         """Handle a single client connection."""
