@@ -50,13 +50,12 @@ This is **routing at the socket level**, not at the network routing table level.
    - Accepts connections on `PROXY_HOST:PROXY_PORT` (default: 127.0.0.1:24800)
    - Binds outbound connections to `LOCAL_LAN_IP` (your physical interface IP)
    - Forwards traffic bidirectionally using separate reader threads
-   - TCP keepalive: SO_KEEPALIVE with 10s/5s/3 intervals
 
 2. **`watchdog.sh`**: Monitor and auto-restart proxy
    - Checks proxy process health (PID file-based)
    - Validates remote service connectivity
-   - Restart cooldown (60s) to prevent flapping
-   - Can run as daemon, cron job, or one-shot
+   - Restart cooldown (120s) to prevent flapping
+   - Can run as foreground daemon, cron job, or one-shot
 
 3. **`diagnose.sh`**: Network diagnostic tool
    - Lists all interfaces and IPs (en0, utun interfaces)
@@ -117,9 +116,9 @@ ip addr show                        # Linux
   --remote-port 24800
 
 # Alternative: Set environment variables
-export LOCAL_LAN_IP=192.168.1.100
-export REMOTE_HOST=192.168.1.50
-export REMOTE_PORT=24800
+export LAN_BRIDGE_LOCAL_IP=192.168.1.100
+export LAN_BRIDGE_REMOTE_HOST=192.168.1.50
+export LAN_BRIDGE_REMOTE_PORT=24800
 ./scripts/lan-bridge.py
 
 # Custom config file location
@@ -135,7 +134,7 @@ export REMOTE_PORT=24800
 
 # Watchdog monitoring
 ./scripts/watchdog.sh                # One-time check
-./scripts/watchdog.sh --daemon       # Run continuously (background)
+./scripts/watchdog.sh --daemon       # Run continuously (foreground; use & or nohup to background)
 ./scripts/watchdog.sh --status       # Current status
 
 # Install as cron job (checks every 5 minutes)
@@ -227,7 +226,7 @@ All shell scripts follow these conventions:
 
 ### Python Code
 
-- Python 3.7+ required (uses subprocess.run capture_output parameter)
+- Python 3.7+ required (minimum tested version)
 - Standard library only (socket, threading, signal, argparse, logging, ipaddress)
 - Logging levels: DEBUG (connection details), INFO (lifecycle), WARNING (recoverable), ERROR (fatal)
 - Version available: `./scripts/lan-bridge.py --version`

@@ -13,10 +13,11 @@ $ netstat -rn
 Destination        Gateway            Interface
 default            192.168.1.1        en0        # Normal internet traffic
 192.168.1.0/24     link#1             en0        # Local network
-10.0.0.0/8         10.153.43.39       utun0      # VPN-routed traffic
+10.0.0.0/8         10.200.1.1         utun0      # VPN-routed traffic
 ```
 
 Each route has:
+
 - **Destination**: IP range this route applies to
 - **Gateway**: Where to send the traffic
 - **Interface**: Physical or virtual network adapter
@@ -42,6 +43,7 @@ This is called a **"no split tunnel"** configuration and is common in enterprise
 ### The Collision
 
 Your home network likely uses one of these private ranges:
+
 - `192.168.1.0/24` (most common)
 - `10.0.0.0/24`
 - `172.16.0.0/24`
@@ -118,7 +120,7 @@ sock.connect(('192.168.1.50', 24800))
 
 ### Why Binding Works
 
-1. **Each interface has an IP**: `en0` has `192.168.1.100`, `utun0` has `10.153.43.39`
+1. **Each interface has an IP**: `en0` has `192.168.1.100`, `utun0` has `10.200.1.1`
 2. **Binding sets the source**: `sock.bind(('192.168.1.100', 0))`
 3. **OS selects interface by source**: Traffic from `192.168.1.100` must go through `en0`
 4. **VPN routing is bypassed**: The routing table isn't consulted for interface selection
@@ -150,6 +152,7 @@ sudo route add -host 192.168.1.50 192.168.1.1
 ```
 
 **Problems:**
+
 1. Many VPN clients **continuously maintain routes** and will override your changes
 2. GlobalProtect, Cisco AnyConnect, etc. use kernel extensions that intercept routing
 3. Routes may be reset on VPN reconnect
@@ -157,6 +160,7 @@ sudo route add -host 192.168.1.50 192.168.1.1
 ### Why Not Use Split Tunneling?
 
 Split tunneling would solve this, but:
+
 1. Most corporate VPNs **disable** split tunneling for security
 2. Users typically **can't change** VPN configuration
 3. IT policies often mandate full tunnel
@@ -164,6 +168,7 @@ Split tunneling would solve this, but:
 ### Why Not Change Home Network IP Range?
 
 You could change your home router to use a different subnet:
+
 1. This is disruptive (all devices need reconfiguration)
 2. Corporate VPNs often route **all** private ranges
 3. Some VPNs route **all** traffic (even public IPs)
@@ -173,6 +178,7 @@ You could change your home router to use a different subnet:
 ### TCP Only
 
 This proxy works for TCP connections. It doesn't help with:
+
 - UDP traffic (gaming, some video conferencing)
 - Broadcast/multicast (mDNS, Bonjour discovery)
 - ICMP (ping)
@@ -184,6 +190,7 @@ Each proxy instance handles one destination. For multiple services, run multiple
 ### Latency
 
 An extra hop is added to every packet:
+
 ```
 Before: Client → Server (~0.5ms)
 After:  Client → Proxy → Server (~0.6ms)
@@ -194,6 +201,7 @@ The added latency is negligible for most applications but may be noticeable for 
 ### No Authentication
 
 The proxy doesn't add security. It relies on:
+
 - The application's own authentication (Synergy uses TLS)
 - Your local network security
 - Firewall rules on both machines

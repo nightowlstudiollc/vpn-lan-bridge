@@ -127,7 +127,17 @@ if [[ -n "$TARGET_HOST" ]]; then
 
   # Check if route goes through VPN
   echo ""
-  route_iface=$(route -n get "$TARGET_HOST" 2>/dev/null | grep "interface:" | awk '{print $2}' || echo "")
+  case "$OS" in
+    Darwin)
+      route_iface=$(route -n get "$TARGET_HOST" 2>/dev/null | grep "interface:" | awk '{print $2}' || echo "")
+      ;;
+    Linux)
+      route_iface=$(ip route get "$TARGET_HOST" 2>/dev/null | grep -oP 'dev \K\S+' || echo "")
+      ;;
+    *)
+      route_iface=""
+      ;;
+  esac
   if [[ "$route_iface" == utun* || "$route_iface" == tun* ]]; then
     echo "⚠️  WARNING: Traffic to $TARGET_HOST is routed through VPN ($route_iface)"
     echo "   This is likely the cause of connectivity issues."
@@ -201,12 +211,15 @@ if [[ -n "$TARGET_HOST" ]]; then
   if [[ -f "config.sh" ]]; then
     load_config_safe "config.sh" 2>/dev/null || true
   fi
-  REMOTE_PORT="${REMOTE_PORT:-24800}"
-  echo "  Port check (${REMOTE_PORT}):"
-  if nc -z -w 2 "$TARGET_HOST" "${REMOTE_PORT}" 2>/dev/null; then
-    echo "    ✓ Port ${REMOTE_PORT} is open"
+  if [[ -n "${REMOTE_PORT:-}" ]]; then
+    echo "  Port check (${REMOTE_PORT}):"
+    if nc -z -w 2 "$TARGET_HOST" "${REMOTE_PORT}" 2>/dev/null; then
+      echo "    ✓ Port ${REMOTE_PORT} is open"
+    else
+      echo "    ✗ Port ${REMOTE_PORT} is closed or unreachable"
+    fi
   else
-    echo "    ✗ Port ${REMOTE_PORT} is closed or unreachable"
+    echo "  Port check: skipped (set REMOTE_PORT in config.sh to test a specific port)"
   fi
 else
   echo "Tip: Run with a target IP to diagnose connectivity:"

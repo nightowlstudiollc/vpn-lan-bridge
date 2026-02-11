@@ -327,7 +327,7 @@ case "${1:-}" in
     echo "Usage: $0 [--daemon|--install-cron|--status|--help]"
     echo ""
     echo "Options:"
-    echo "  --daemon, -d       Run continuously"
+    echo "  --daemon, -d       Run continuously (foreground; use & or nohup to background)"
     echo "  --install-cron     Install cron job for periodic checks"
     echo "  --status, -s       Show current status"
     echo "  --help, -h         Show this help"

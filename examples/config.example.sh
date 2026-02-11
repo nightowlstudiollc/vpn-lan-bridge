@@ -31,7 +31,7 @@
 
 # Your computer's LAN IP address (the physical network interface, NOT the VPN)
 # Find it with: ifconfig en0 | grep "inet "
-# Example: 192.168.1.100, 10.0.15.68, 172.16.0.50
+# Example: 192.168.1.100, 10.0.1.100, 172.16.0.50
 export LOCAL_LAN_IP="192.168.1.100"
 
 # The remote service you want to reach on your local network

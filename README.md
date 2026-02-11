@@ -18,12 +18,12 @@ Many enterprise VPNs route private IP ranges (like `10.0.0.0/8` or `192.168.0.0/
 - Network printers become inaccessible
 - NAS/file shares disconnect
 - Local development servers unreachable
-- AirDrop/Bonjour services fail
+- AirDrop/Bonjour services fail (UDP-based; this tool proxies TCP only)
 
 **Example scenario:**
 
 ```
-Home LAN:        10.0.15.0/24
+Home LAN:        10.0.1.0/24
 VPN routes:      10.0.0.0/8 → tunnel
 Result:          All 10.x.x.x traffic goes through VPN, including your LAN
 ```
@@ -50,7 +50,7 @@ This toolkit provides a **TCP proxy** that binds to your physical network interf
                                               ┌─────────────────────┐
                                               │   Local Service     │
                                               │  (Synergy Server)   │
-                                              │    10.0.15.32       │
+                                              │    10.0.1.32        │
                                               └─────────────────────┘
 ```
 
@@ -79,8 +79,11 @@ ping -c 1 your-server.local
 # Note the IP address
 
 # Check if VPN is capturing the traffic
+# macOS:
 route -n get 192.168.1.50
-# If "interface: utun" appears, the VPN is capturing it
+# Linux:
+ip route get 192.168.1.50
+# If "interface: utun" (macOS) or "dev tun" (Linux) appears, the VPN is capturing it
 ```
 
 ### 3. Configure the Proxy
@@ -118,7 +121,7 @@ PROXY_PORT=24800
 ./scripts/lan-bridge.py
 ```
 
-### 4. Configure Your Application
+### 5. Configure Your Application
 
 Point your application to `127.0.0.1:24800` instead of the remote IP.
 
@@ -143,14 +146,18 @@ The proxy works with any TCP-based service:
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/vpn-lan-bridge.git
+git clone https://github.com/smartwatermelon/vpn-lan-bridge.git
 cd vpn-lan-bridge
+
+# If downloaded as ZIP, make scripts executable
+chmod +x scripts/*.sh scripts/lan-bridge.py
 
 # Copy and edit configuration
 cp examples/config.example.sh config.sh
 nano config.sh
 
 # Install LaunchAgent for auto-start
+mkdir -p ~/Library/Logs/vpn-lan-bridge
 cp examples/com.vpn-lan-bridge.plist ~/Library/LaunchAgents/
 # Edit the plist to match your paths
 launchctl load ~/Library/LaunchAgents/com.vpn-lan-bridge.plist
@@ -160,8 +167,11 @@ launchctl load ~/Library/LaunchAgents/com.vpn-lan-bridge.plist
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/vpn-lan-bridge.git
+git clone https://github.com/smartwatermelon/vpn-lan-bridge.git
 cd vpn-lan-bridge
+
+# If downloaded as ZIP, make scripts executable
+chmod +x scripts/*.sh scripts/lan-bridge.py
 
 # Copy and edit configuration
 cp examples/config.example.sh config.sh
@@ -221,10 +231,10 @@ When you connect to a VPN, it typically:
 ```bash
 # Example routing table with VPN connected
 $ netstat -rn | grep "10\."
-10.0.0.0/8        10.153.43.39      UGSc    utun0    # VPN captures all 10.x.x.x
+10.0.0.0/8        10.200.1.1        UGSc    utun0    # VPN captures all 10.x.x.x
 ```
 
-Your LAN (`10.0.15.0/24`) falls within `10.0.0.0/8`, so all local traffic gets routed through the VPN tunnel.
+Your LAN (`10.0.1.0/24`) falls within `10.0.0.0/8`, so all local traffic gets routed through the VPN tunnel.
 
 ### The Proxy Solution
 
@@ -246,7 +256,7 @@ When the socket is bound to the LAN IP, the OS routes the traffic through the ph
 ### Why This Works
 
 - Binding to a specific source IP forces the OS to use the interface that owns that IP
-- The VPN tunnel interface has its own IP (e.g., `10.153.43.39`), not your LAN IP
+- The VPN tunnel interface has its own IP (e.g., `10.200.1.1`), not your LAN IP
 - Traffic originating from your LAN IP bypasses VPN routing rules
 
 ## Troubleshooting
@@ -255,7 +265,10 @@ When the socket is bound to the LAN IP, the OS routes the traffic through the ph
 
 ```bash
 # Test if you can reach the server via LAN (bypassing VPN)
+# macOS:
 ping -S 192.168.1.100 192.168.1.50
+# Linux:
+ping -I 192.168.1.100 192.168.1.50
 
 # If this works but normal ping fails, the proxy solution will help
 ping 192.168.1.50  # Fails - goes through VPN
@@ -269,14 +282,15 @@ ping 192.168.1.50  # Fails - goes through VPN
    pgrep -fl lan-bridge
    ```
 
-2. Check the proxy log:
+2. Check the proxy output:
 
    ```bash
-   # macOS
+   # When running directly, logs appear in the terminal (stdout/stderr).
+   # When running via launchd/systemd, check the configured log paths:
+   # macOS (launchd):
    tail -f ~/Library/Logs/vpn-lan-bridge/lan-bridge.log
-
-   # Linux
-   tail -f ~/.local/log/vpn-lan-bridge/lan-bridge.log
+   # Linux (systemd):
+   journalctl -u vpn-lan-bridge -f
    ```
 
 3. Verify your LAN IP is correct:

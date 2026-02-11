@@ -7,11 +7,12 @@ This guide explains how to configure Synergy (or its fork, Barrier) to work with
 When you connect to a corporate VPN, Synergy loses connection to your server because:
 
 1. Your VPN routes private IP ranges through its tunnel
-2. Your Synergy server is on a private IP (e.g., `192.168.1.50` or `10.0.15.32`)
+2. Your Synergy server is on a private IP (e.g., `192.168.1.50` or `10.0.1.50`)
 3. Traffic to the server now goes through the VPN instead of your local network
 4. The VPN either blocks this traffic or routes it incorrectly
 
 **Symptoms:**
+
 - Synergy client shows "Disconnected" or "Connecting..."
 - Error: "WARNING: failed to connect to server: No route to host"
 - Mouse and keyboard stop working on the server machine
@@ -29,6 +30,7 @@ Synergy Client → 127.0.0.1:24800 → LAN Bridge → (via LAN) → Synergy Serv
 ### 1. Identify Your Network Configuration
 
 Find your client's LAN IP:
+
 ```bash
 # macOS
 ifconfig en0 | grep "inet "
@@ -39,6 +41,7 @@ ip addr show eth0 | grep "inet "
 ```
 
 Find your Synergy server's IP:
+
 ```bash
 # If using mDNS/Bonjour
 ping -c 1 your-server.local
@@ -47,9 +50,13 @@ ping -c 1 your-server.local
 ```
 
 Verify VPN is capturing the traffic:
+
 ```bash
+# macOS:
 route -n get 192.168.1.50
-# If "interface: utun" appears, VPN is capturing it
+# Linux:
+ip route get 192.168.1.50
+# If "interface: utun" (macOS) or "dev tun" (Linux) appears, VPN is capturing it
 ```
 
 ### 2. Configure the LAN Bridge
@@ -70,11 +77,13 @@ REMOTE_PORT="24800"
 ### 3. Test the Proxy
 
 Start the proxy manually first:
+
 ```bash
 ./scripts/lan-bridge.py
 ```
 
 You should see:
+
 ```
 LAN Bridge started
   Listening on:    127.0.0.1:24800
@@ -108,6 +117,7 @@ Edit `~/Library/Preferences/Synergy/local.json` (macOS) and find the `local_comp
 Edit the client configuration to use `127.0.0.1` as the server address.
 
 Command line:
+
 ```bash
 synergyc 127.0.0.1
 ```
@@ -127,6 +137,7 @@ pkill -f synergy-core  # or synergyc for older versions
 ```
 
 Check the connection:
+
 ```bash
 # Synergy 3.x logs
 tail -f ~/Library/Logs/Synergy/synergy.log
@@ -142,6 +153,7 @@ tail -f ~/Library/Logs/Synergy/synergy.log
 #### macOS
 
 Copy and configure the LaunchAgent:
+
 ```bash
 cp examples/com.vpn-lan-bridge.plist ~/Library/LaunchAgents/
 # Edit paths in the file
@@ -154,6 +166,7 @@ launchctl load ~/Library/LaunchAgents/com.vpn-lan-bridge.plist
 #### Linux
 
 Copy and configure the systemd service:
+
 ```bash
 sudo cp examples/vpn-lan-bridge.service /etc/systemd/system/
 # Edit paths in the file
@@ -182,11 +195,13 @@ nc -z 127.0.0.1 24800
 The proxy can't reach the server via your LAN IP. Verify:
 
 1. Your LAN IP is correct:
+
    ```bash
    ifconfig en0 | grep "inet "
    ```
 
 2. You can reach the server when binding to LAN IP:
+
    ```bash
    # macOS
    ping -S 192.168.1.100 192.168.1.50
@@ -200,6 +215,7 @@ The proxy can't reach the server via your LAN IP. Verify:
 ### Synergy connects but immediately disconnects
 
 Check for TLS/certificate issues:
+
 ```bash
 tail -f ~/Library/Logs/Synergy/synergy.log | grep -i ssl
 ```
@@ -215,6 +231,7 @@ This is normal - traffic now goes through an extra hop. The latency added is min
 The Synergy **server** doesn't need any changes. It continues to listen on its normal IP address. Only the **client** configuration changes to point to the local proxy.
 
 If your server also runs a VPN and needs to reach the client:
+
 1. Set up the LAN Bridge on the server too
 2. Or configure split tunneling on the server's VPN
 
@@ -224,10 +241,10 @@ If you have multiple Synergy servers, you can run multiple proxy instances on di
 
 ```bash
 # Server 1 - port 24800
-./scripts/lan-bridge.py --remote-host 192.168.1.50 --remote-port 24800
+./scripts/lan-bridge.py --lan-ip 192.168.1.100 --remote-host 192.168.1.50 --remote-port 24800
 
 # Server 2 - port 24801
-./scripts/lan-bridge.py --remote-host 192.168.1.51 --remote-port 24800 --proxy-port 24801
+./scripts/lan-bridge.py --lan-ip 192.168.1.100 --remote-host 192.168.1.51 --remote-port 24800 --proxy-port 24801
 ```
 
 Then configure each Synergy client profile to use the appropriate local port.
