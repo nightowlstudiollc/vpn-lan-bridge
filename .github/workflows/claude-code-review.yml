@@ -1,0 +1,28 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude-review:
+    uses: smartwatermelon/github-workflows/.github/workflows/claude-blocking-review.yml@v1
+    # Permissions must be granted at the caller level; the reusable workflow
+    # cannot elevate beyond what the caller grants.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write  # required by claude-code-action for internal authentication
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      extra_instructions: |
+        This is a Python/Bash networking utility for VPN/LAN bridging (stdlib only, no external deps).
+        Pay particular attention to:
+        - Shell injection — never pass unsanitized input to subprocess or shell commands; use argument lists, not strings
+        - Network input validation — validate IP addresses and port numbers from any external source
+        - Privilege escalation — operations requiring elevated privileges must be minimal and explicit
+        - Resource leaks — sockets and connections must be properly closed on all error paths
+        - subprocess calls — prefer list form over shell=True to prevent injection
+    secrets:
+      claude_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
